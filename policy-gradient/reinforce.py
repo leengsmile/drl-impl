@@ -94,7 +94,7 @@ class Agent:
             torch.cumsum(torch.flip(rewards * discounts, dims=[0]), dim=0),
             dims=[0]
         ) / discounts
-        # returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+        # todo(haleng): verify the \gamma^{t-1} in the summation on page 115 in drl
         loss = (-log_probs * returns).sum()
         return returns, loss
 
