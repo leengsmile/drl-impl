@@ -123,12 +123,12 @@ class Agent:
         for episode in itertools.count():
             state, _ = env.reset()
             state = torch.tensor(state, dtype=torch.float32, device=self.device)
-            terminated, truncated = False, False
+            done = False
             episode_reward = 0
             log_probs = []
             rewards = []
 
-            while (not terminated and not truncated):
+            while (not done):
                 action_probs = policy_net(state.unsqueeze(0))
 
                 if is_training:
@@ -148,6 +148,7 @@ class Agent:
                 rewards.append(reward)
 
                 state = new_state
+                done = terminated or truncated
             self.recent_rewards.append(episode_reward)
 
             if is_training:

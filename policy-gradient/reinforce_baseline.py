@@ -123,7 +123,6 @@ class Agent:
         ) / discounts
         return returns
 
-
     def run(self, is_training: bool = False, render: bool = False):
         
         env = gym.make(self.env_id, render_mode='human' if render else None)
@@ -198,7 +197,7 @@ class Agent:
                 loss = self.optimize(policy_optimizer, value_optimizer, rewards, log_probs, values)
                 if (episode + 1) % log_interval == 0:
                     avg_reward = np.mean(self.recent_rewards) if self.recent_rewards else episode_reward
-                    logging.info(f'Episode {episode}, best reward: {best_reward}, reward: {episode_reward}, avg(100): {avg_reward}, loss: {loss:.3f}')
+                    logging.info(f'Episode {episode}, best reward: {best_reward}, reward: {episode_reward}, avg({log_interval}): {avg_reward}, loss: {loss:.3f}')
                     self.recent_rewards = []
             else:
                 logging.info(f'Episode {episode}, reward: {episode_reward}')
@@ -210,14 +209,15 @@ class Agent:
                  rewards: torch.Tensor, 
                  log_probs: torch.Tensor, 
                  values: torch.Tensor):
-        rewards = torch.stack(rewards)
-        log_probs = torch.stack(log_probs)
+        rewards = torch.stack(rewards)      # requires_grad = False
+        log_probs = torch.stack(log_probs)  # requires_grad = True
         
         returns = self.compute_returns(rewards=rewards)
 
         # policy loss
-        delta = values.detach() - returns
-        policy_loss = (log_probs * delta).sum()
+        advantages = returns - values.detach()
+        # advantages = (advantages - advantages.mean()) / advantages.std()
+        policy_loss = -(log_probs * advantages).sum()
         policy_optimizer.zero_grad()
         policy_loss.backward()
         policy_optimizer.step()
