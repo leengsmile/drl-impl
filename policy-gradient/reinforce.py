@@ -65,7 +65,9 @@ class Agent:
                  num_episodes: int = 1000,
                  model_path: str = './model/reinforce/runs.pt',
                  gradient_clip: float = 1.0,
-                 device: str = 'cpu'
+                 device: str = 'cpu',
+                 use_entropy_regularization: bool = False,
+                 log_interval: int = 100,
                  ):
         self.env_id = env_id
         self.discount_factor = discount_factor
@@ -85,6 +87,8 @@ class Agent:
         self.gradient_clip = gradient_clip
         self.recent_rewards = deque(maxlen=100)
         self.device = device
+        self.use_entropy_regularization = use_entropy_regularization
+        self.log_interval = log_interval
 
     def compute_loss(self, rewards: torch.Tensor, log_probs: torch.Tensor):
         
@@ -109,7 +113,7 @@ class Agent:
         policy_net = Policy(num_states=num_states, num_actions=num_actions, hidden_dim=self.hidden_dim)
         policy_net.to(self.device)
 
-        log_interval = 20
+        log_interval = self.log_interval
         
         if is_training:
             logging.info(f'start training env: {self.env_id}')
@@ -127,7 +131,7 @@ class Agent:
             episode_reward = 0
             log_probs = []
             rewards = []
-
+            entropy_loss = []
             while (not done):
                 action_probs = policy_net(state.unsqueeze(0))
 
@@ -136,6 +140,8 @@ class Agent:
                     action = dist.sample()
                     log_prob = dist.log_prob(action)
                     log_probs.append(log_prob)
+                    entropy = dist.entropy().sum()
+                    entropy_loss.append(entropy)
                 else:
                     action = torch.argmax(action_probs, dim=-1)
                 
@@ -159,22 +165,24 @@ class Agent:
                     logging.info(f'Episode {episode}, New best reward: {episode_reward:0.1f}, ({increase_rate:.2%})')
                     best_reward = episode_reward
                     torch.save(policy_net.state_dict(), self.model_path)
-                
-                loss = self.optimize(optimizer, rewards, log_probs)
+                entropy_loss = torch.stack(entropy_loss, dim=-1).sum()
+                loss = self.optimize(optimizer, rewards, log_probs, entropy_loss)
                 if (episode + 1) % log_interval == 0:
                     avg_reward = np.mean(self.recent_rewards) if self.recent_rewards else episode_reward
-                    logging.info(f'Episode {episode}, best reward: {best_reward}, reward: {episode_reward}, avg(100): {avg_reward}, loss: {loss:.3f}')
+                    logging.info(f'Episode {episode}, best reward: {best_reward}, reward: {episode_reward}, avg({log_interval}): {avg_reward}, loss: {loss:.3f}')
                     self.recent_rewards = []
             else:
                 logging.info(f'Episode {episode}, reward: {episode_reward}')
         env.close()
 
-    def optimize(self, optimizer: optim.Optimizer, rewards: torch.Tensor, log_probs: torch.Tensor):
+    def optimize(self, optimizer: optim.Optimizer, rewards: torch.Tensor, log_probs: torch.Tensor, entropy_loss: torch.Tensor):
         rewards = torch.stack(rewards)
         log_probs = torch.stack(log_probs)
         
         _, loss = self.compute_loss(rewards, log_probs)
-
+        
+        if self.use_entropy_regularization:
+            loss += 0.01 * entropy_loss
         optimizer.zero_grad()
         loss.backward()
         if self.gradient_clip > 0:
@@ -190,7 +198,7 @@ def main():
     initialize('./logs/reinforce_train.log')
     logging.info(f'device: {device}')
 
-    agent = Agent(env_id='CartPole-v1', gradient_clip=0.)
+    agent = Agent(env_id='CartPole-v1', gradient_clip=0., use_entropy_regularization=True)
     if args.train:
         agent.run(is_training=True)
     else:
