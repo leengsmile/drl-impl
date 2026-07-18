@@ -25,8 +25,6 @@ class Policy(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(num_states, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
             nn.Linear(hidden_dim, num_actions)
         )
     
@@ -47,7 +45,6 @@ def parse_args() -> argparse.Namespace:
 def initialize(log_file):
     base_dir = os.path.dirname(log_file)
     os.makedirs(base_dir, exist_ok=True)
-    # log_file = os.path.join(base_dir, f'{project_name}.log')
     
     FORMAT = '[%(asctime)s]-[%(filename)s:%(funcName)s:%(lineno)d]-[%(levelname)s]: %(message)s'
     formmater = logging.Formatter(FORMAT)
@@ -55,6 +52,7 @@ def initialize(log_file):
                         level=logging.INFO,
                         handlers=[logging.FileHandler(log_file), logging.StreamHandler()]
     )
+
 
 class Agent:
 
@@ -89,16 +87,7 @@ class Agent:
         self.device = device
 
     def compute_loss(self, rewards: torch.Tensor, log_probs: torch.Tensor):
-        # R = 0
-        # loss = 0
-        # n = len(rewards)
-        # # for r, log_prob in reversed(zip(rewards, log_probs)):
-        # for i in reversed(range(n)):
-        #     r, log_prob = rewards[i], log_probs[i]
-        #     R = r + self.discount_factor * R
-        #     loss -= log_prob * R
-        # return None, loss
-
+        
         n = len(rewards)
         discounts = self.discount_factor ** torch.arange(n, device=rewards.device)
         returns = torch.flip(
@@ -139,7 +128,6 @@ class Agent:
             log_probs = []
             rewards = []
 
-            # while (not terminated and episode_reward < self.stop_on_reward):
             while (not terminated and not truncated):
                 action_probs = policy_net(state.unsqueeze(0))
 
@@ -184,7 +172,7 @@ class Agent:
         rewards = torch.stack(rewards)
         log_probs = torch.stack(log_probs)
         
-        returns, loss = self.compute_loss(rewards, log_probs)
+        _, loss = self.compute_loss(rewards, log_probs)
 
         optimizer.zero_grad()
         loss.backward()
