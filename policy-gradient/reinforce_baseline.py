@@ -79,7 +79,9 @@ class Agent:
                  num_episodes: int = 1000,
                  model_path: str = './model/reinforce/runs.pt',
                  gradient_clip: float = 1.0,
-                 device: str = 'cpu'
+                 device: str = 'cpu',
+                 use_entropy_regularization: bool = False,
+                 log_interval: int = 100,
                  ):
         self.env_id = env_id
         self.discount_factor = discount_factor
@@ -99,6 +101,8 @@ class Agent:
         self.gradient_clip = gradient_clip
         self.recent_rewards = deque(maxlen=100)
         self.device = device
+        self.use_entropy_regularization = use_entropy_regularization
+        self.log_interval = log_interval
 
     def compute_loss(self, rewards: torch.Tensor, log_probs: torch.Tensor, values: torch.Tensor):
         
@@ -136,7 +140,7 @@ class Agent:
         value_net = ValueNet(num_states=num_states, hidden_dim=self.hidden_dim)
         value_net.to(self.device)
 
-        log_interval = 20
+        log_interval = self.log_interval
         
         if is_training:
             logging.info(f'start training env: {self.env_id}')
@@ -156,7 +160,7 @@ class Agent:
             log_probs = []
             rewards = []
             values = []
-
+            entropy_loss = []
             while (not done):
                 action_probs = policy_net(state.unsqueeze(0))
 
@@ -168,6 +172,8 @@ class Agent:
 
                     value = value_net(state)
                     values.append(value)
+                    entropy = dist.entropy().sum()
+                    entropy_loss.append(entropy)
                 else:
                     action = torch.argmax(action_probs, dim=-1)
                 
@@ -176,7 +182,6 @@ class Agent:
                 episode_reward += reward
                 reward = torch.tensor(reward, dtype=torch.float32, device=self.device)
                 new_state = torch.tensor(new_state, dtype=torch.float32, device=self.device)
-                # values = torch.tensor(values, dtype=torch.float32, device=self.device)
 
                 rewards.append(reward)
 
@@ -194,7 +199,8 @@ class Agent:
                     torch.save(policy_net.state_dict(), self.model_path)
                 
                 values = torch.concat(values)
-                loss = self.optimize(policy_optimizer, value_optimizer, rewards, log_probs, values)
+                entropy_loss = torch.stack(entropy_loss, dim=-1).sum()
+                loss = self.optimize(policy_optimizer, value_optimizer, rewards, log_probs, values, entropy_loss=entropy_loss)
                 if (episode + 1) % log_interval == 0:
                     avg_reward = np.mean(self.recent_rewards) if self.recent_rewards else episode_reward
                     logging.info(f'Episode {episode}, best reward: {best_reward}, reward: {episode_reward}, avg({log_interval}): {avg_reward}, loss: {loss:.3f}')
@@ -208,7 +214,8 @@ class Agent:
                  value_optimizer: optim.Optimizer, 
                  rewards: torch.Tensor, 
                  log_probs: torch.Tensor, 
-                 values: torch.Tensor):
+                 values: torch.Tensor,
+                 entropy_loss: torch.Tensor):
         rewards = torch.stack(rewards)      # requires_grad = False
         log_probs = torch.stack(log_probs)  # requires_grad = True
         
@@ -218,6 +225,8 @@ class Agent:
         advantages = returns - values.detach()
         # advantages = (advantages - advantages.mean()) / advantages.std()
         policy_loss = -(log_probs * advantages).sum()
+        if self.use_entropy_regularization:
+            policy_loss += 0.01 * entropy_loss
         policy_optimizer.zero_grad()
         policy_loss.backward()
         policy_optimizer.step()
@@ -238,7 +247,7 @@ def main():
     initialize('./logs/reinforce_train.log')
     logging.info(f'device: {device}')
 
-    agent = Agent(env_id='CartPole-v1', gradient_clip=0.)
+    agent = Agent(env_id='CartPole-v1', gradient_clip=0., use_entropy_regularization=True)
     if args.train:
         agent.run(is_training=True)
     else:
