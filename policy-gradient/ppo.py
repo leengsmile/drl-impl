@@ -3,10 +3,11 @@ ppo: https://github.com/seungeunrho/minimalRL/blob/master/ppo.py
 
 ppo-for-beginers: https://github.com/ericyangyu/PPO-for-Beginners
 
+hands-on-RL: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95
+
 """
 from __future__ import annotations
 import argparse
-from collections import deque
 import itertools
 import logging
 import math
@@ -183,8 +184,6 @@ class Agent:
         
     def eval(self, ):
         env: Env = self.env
-        log_interval = self.log_interval
-
         self.actor.load_state_dict(torch.load(self.actor_model_path, map_location=self.device))
 
         for episode in itertools.count(1):
@@ -254,7 +253,7 @@ def main():
     args = parse_args()
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    initialize('./logs/ac.log')
+    initialize('./logs/ppo.log')
     logging.info(f'device: {device}')
 
     env_id = 'CartPole-v1'
@@ -264,11 +263,6 @@ def main():
         agent.train()
     else:
         agent.eval()
-    # # agent = Agent(env_id='CartPole-v1', gradient_clip=0., use_entropy_regularization=False)
-    # if args.train:
-    #     agent.run(is_training=True)
-    # else:
-    #     agent.run(is_training=False, render=True)
 
 
 if __name__ == '__main__':
